@@ -1,24 +1,71 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Key, Shield, ExternalLink, Settings } from 'lucide-react';
+import { X, Key, Shield, ExternalLink, Settings, Loader2 } from 'lucide-react';
+
+interface DiscoveredModel {
+    name: string;
+    displayName: string;
+    score: number;
+}
 
 interface AgentModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSave: (key: string, _endpoint: string) => void;
+    onSave: (key: string, model: string) => void;
 }
 
 export function AgentModal({ isOpen, onClose, onSave }: AgentModalProps) {
     const [apiKey, setApiKey] = useState('');
+    const [model, setModel] = useState('gemini-1.5-flash');
+    const [models, setModels] = useState<DiscoveredModel[]>([]);
+    const [isLoadingModels, setIsLoadingModels] = useState(false);
 
     useEffect(() => {
         const savedKey = localStorage.getItem('gemini_api_key');
+        const savedModel = localStorage.getItem('gemini_model');
         if (savedKey) setApiKey(savedKey);
-    }, []);
+        if (savedModel) setModel(savedModel);
+    }, [isOpen]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+        setIsLoadingModels(true);
+        const headers: Record<string, string> = {};
+        if (apiKey) Object.assign(headers, { 'X-Gemini-Key': apiKey });
+
+        fetch(import.meta.env.PROD ? '/api/models' : 'http://localhost:5333/api/models', { headers })
+            .then(res => res.json())
+            .then(data => {
+                if (data.models) {
+                    const discovered = data.models
+                        .filter((m: any) => m.supportedGenerationMethods?.includes("generateContent"))
+                        .map((m: any) => {
+                            const cleanName = m.name.replace("models/", "");
+                            let score = 0;
+                            if (cleanName.includes("pro")) score += 10;
+                            if (cleanName.includes("flash")) score += 5;
+                            return {
+                                name: cleanName,
+                                displayName: m.displayName || cleanName,
+                                score: score
+                            };
+                        })
+                        .sort((a: any, b: any) => b.score - a.score);
+
+                    setModels(discovered);
+                    if (discovered.length > 0 && !discovered.find((m: any) => m.name === model)) {
+                        setModel(discovered[0].name);
+                    }
+                }
+            })
+            .catch(console.error)
+            .finally(() => setIsLoadingModels(false));
+    }, [isOpen, apiKey]);
 
     const handleSave = () => {
         localStorage.setItem('gemini_api_key', apiKey);
-        onSave(apiKey, '');
+        localStorage.setItem('gemini_model', model);
+        onSave(apiKey, model);
         onClose();
     };
 
@@ -71,10 +118,14 @@ export function AgentModal({ isOpen, onClose, onSave }: AgentModalProps) {
                                             value={apiKey}
                                             onChange={(e) => setApiKey(e.target.value)}
                                             className="w-full bg-black/40 border border-slate-700/50 rounded-xl py-3 pl-10 pr-4 text-white focus:outline-none focus:border-primary-500/50 focus:ring-1 focus:ring-primary-500/50 transition-all font-mono text-sm"
-                                            placeholder="AIzaSy..."
+                                            placeholder="Using public fallback key — paste your own for higher limits"
                                         />
                                     </div>
-                                    <div className="flex items-center justify-between mt-2 text-xs">
+                                    <div className="text-[10px] text-slate-400 mt-2 leading-snug px-1">
+                                        ✅ A free public API key is active by default. Add your own for higher rate limits.<br />
+                                        <strong className="text-slate-300">Free Tier Limits:</strong> 15 Requests/Min, 1,000,000 Tokens/Min, 1,500 Requests/Day.
+                                    </div>
+                                    <div className="flex items-center justify-between mt-2 text-xs mb-6">
                                         <p className="text-slate-500 flex items-center gap-1.5">
                                             <Shield size={12} /> Stored locally in browser
                                         </p>
@@ -86,6 +137,30 @@ export function AgentModal({ isOpen, onClose, onSave }: AgentModalProps) {
                                         >
                                             Get API Key <ExternalLink size={10} />
                                         </a>
+                                    </div>
+
+                                    <div className="space-y-2 mt-4">
+                                        <label className="text-sm font-semibold text-slate-300 flex items-center justify-between w-full">
+                                            <span>Inference Engine</span>
+                                            {isLoadingModels && <Loader2 size={14} className="animate-spin text-primary-400" />}
+                                        </label>
+                                        <select
+                                            value={model}
+                                            onChange={(e) => setModel(e.target.value)}
+                                            className="w-full bg-black/40 border border-slate-700/50 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary-500/50 focus:ring-1 focus:ring-primary-500/50 transition-all appearance-none"
+                                        >
+                                            {models.length > 0 ? (
+                                                models.map(m => (
+                                                    <option key={m.name} value={m.name}>{m.displayName}</option>
+                                                ))
+                                            ) : (
+                                                <>
+                                                    <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                                                    <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                                                    <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                                                </>
+                                            )}
+                                        </select>
                                     </div>
                                 </div>
                             </div>

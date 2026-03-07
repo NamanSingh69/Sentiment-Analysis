@@ -30,25 +30,22 @@ function App() {
 
   const handleAnalyze = async () => {
     if (!textToAnalyze.trim()) return;
-    if (!apiKey) {
-      setErrorMessage("Please configure your Gemini API Key first.");
-      setStatus('error');
-      setIsAgentModalOpen(true);
-      return;
-    }
 
     setStatus('loading');
     setErrorMessage('');
 
     try {
       // Direct call to relative /api/analyze to trigger Vercel Serverless
-      const response = await fetch('/api/analyze', {
+      const response = await fetch(import.meta.env.PROD ? '/api/analyze' : 'http://localhost:5333/api/analyze', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-Gemini-Key': apiKey
         },
-        body: JSON.stringify({ text: textToAnalyze })
+        body: JSON.stringify({
+          text: textToAnalyze,
+          model: localStorage.getItem('gemini_model') || 'gemini-1.5-flash'
+        })
       });
 
       const data = await response.json();

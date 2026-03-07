@@ -1,4 +1,5 @@
 import os
+import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pydantic import BaseModel, ValidationError, Field
@@ -10,6 +11,7 @@ CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 class AnalyzeSentimentRequest(BaseModel):
     text: str = Field(..., min_length=1)
+    model: str = Field(default="gemini-1.5-flash")
     
 class SentimentAnalysisResponse(BaseModel):
     sentiment: str # e.g. "Positive", "Negative", "Neutral"
@@ -20,12 +22,32 @@ class SentimentAnalysisResponse(BaseModel):
 def health_check():
     return jsonify({"status": "healthy", "service": "Sentiment Analysis API"})
 
+@app.route('/api/models', methods=['GET'])
+def get_models():
+    api_key = request.headers.get('X-Gemini-Key')
+    if not api_key or not api_key.strip() or api_key == "null":
+        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("VITE_GEMINI_API_KEY") or "AIzaSyAmFPeaoBow1mHG0bnZG4y_6QkqN98e4oo"
+        
+    if not api_key:
+        return jsonify({"error": "Gemini API key missing"}), 401
+
+    try:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+        response = requests.get(url)
+        if response.status_code != 200:
+            return jsonify(response.json()), response.status_code
+        return jsonify(response.json()), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/analyze', methods=['POST'])
 def analyze_sentiment():
-    # 1. Require user's API Key from frontend (AgentModal pattern)
     api_key = request.headers.get('X-Gemini-Key')
+    if not api_key or not api_key.strip() or api_key == "null":
+        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("VITE_GEMINI_API_KEY") or "AIzaSyAmFPeaoBow1mHG0bnZG4y_6QkqN98e4oo"
+        
     if not api_key:
-        return jsonify({"error": "Missing X-Gemini-Key header. Please provide your API key in the UI."}), 401
+        return jsonify({"error": "Missing API Key. Please provide your API key in the UI or set GEMINI_API_KEY in the environment."}), 401
 
     try:
         # 2. Strict Zero-Trust JSON validation
@@ -51,8 +73,8 @@ def analyze_sentiment():
         "{data.text}"
         """
         
-        # Using 1.5-flash for fast analysis
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # Using submitted model or default flash
+        model = genai.GenerativeModel(data.model)
         response = model.generate_content(prompt)
         
         # Clean markdown codeblocks if model adds them
