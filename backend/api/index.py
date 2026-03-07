@@ -4,6 +4,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pydantic import BaseModel, ValidationError, Field
 import google.generativeai as genai
+from gemini_model_resolver import generate_with_fallback, get_dynamic_cascade
 
 app = Flask(__name__)
 # Enable CORS for the frontend origin
@@ -32,11 +33,10 @@ def get_models():
         return jsonify({"error": "Gemini API key missing"}), 401
 
     try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
-        response = requests.get(url)
-        if response.status_code != 200:
-            return jsonify(response.json()), response.status_code
-        return jsonify(response.json()), 200
+        cascade = get_dynamic_cascade(api_key)
+        return jsonify({
+            "models": [{"name": f"models/{m}"} for m in cascade]
+        }), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -74,8 +74,11 @@ def analyze_sentiment():
         """
         
         # Using submitted model or default flash
-        model = genai.GenerativeModel(data.model)
-        response = model.generate_content(prompt)
+        response, model_used = generate_with_fallback(
+            api_key=api_key,
+            initial_model=data.model,
+            contents=[prompt]
+        )
         
         # Clean markdown codeblocks if model adds them
         text_response = response.text.strip()
@@ -90,9 +93,12 @@ def analyze_sentiment():
         # 4. Validate AI Output against Schema 
         validated_response = SentimentAnalysisResponse(**structured_output)
         
+        payload = validated_response.model_dump()
+        payload["_model_used"] = model_used
+
         return jsonify({
             "success": True, 
-            "result": validated_response.model_dump()
+            "result": payload
         }), 200
         
     except Exception as e:
