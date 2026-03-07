@@ -27,7 +27,7 @@ def health_check():
 def get_models():
     api_key = request.headers.get('X-Gemini-Key')
     if not api_key or not api_key.strip() or api_key == "null":
-        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("VITE_GEMINI_API_KEY") or "AIzaSyAmFPeaoBow1mHG0bnZG4y_6QkqN98e4oo"
+        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("VITE_GEMINI_API_KEY") or "***REDACTED_API_KEY***"
         
     if not api_key:
         return jsonify({"error": "Gemini API key missing"}), 401
@@ -44,7 +44,7 @@ def get_models():
 def analyze_sentiment():
     api_key = request.headers.get('X-Gemini-Key')
     if not api_key or not api_key.strip() or api_key == "null":
-        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("VITE_GEMINI_API_KEY") or "AIzaSyAmFPeaoBow1mHG0bnZG4y_6QkqN98e4oo"
+        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("VITE_GEMINI_API_KEY") or "***REDACTED_API_KEY***"
         
     if not api_key:
         return jsonify({"error": "Missing API Key. Please provide your API key in the UI or set GEMINI_API_KEY in the environment."}), 401
