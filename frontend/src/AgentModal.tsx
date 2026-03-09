@@ -11,21 +11,28 @@ interface DiscoveredModel {
 interface AgentModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSave: (key: string, model: string) => void;
+    onSave: (key: string, model: string, mode: 'pro' | 'fast') => void;
+    initialMode?: 'pro' | 'fast';
+    initialModel?: string;
+    quotaRemaining?: number;
+    quotaLimit?: number;
 }
 
-export function AgentModal({ isOpen, onClose, onSave }: AgentModalProps) {
+export function AgentModal({ isOpen, onClose, onSave, initialMode = 'pro', initialModel = 'gemini-2.5-pro', quotaRemaining = 25, quotaLimit = 25 }: AgentModalProps) {
     const [apiKey, setApiKey] = useState('');
-    const [model, setModel] = useState('gemini-1.5-flash');
+    const [model, setModel] = useState(initialModel);
+    const [mode, setMode] = useState<'pro' | 'fast'>(initialMode);
+
+    // Filtered models state
     const [models, setModels] = useState<DiscoveredModel[]>([]);
     const [isLoadingModels, setIsLoadingModels] = useState(false);
 
     useEffect(() => {
         const savedKey = localStorage.getItem('gemini_api_key');
-        const savedModel = localStorage.getItem('gemini_model');
         if (savedKey) setApiKey(savedKey);
-        if (savedModel) setModel(savedModel);
-    }, [isOpen]);
+        setModel(initialModel);
+        setMode(initialMode);
+    }, [isOpen, initialModel, initialMode]);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -65,7 +72,8 @@ export function AgentModal({ isOpen, onClose, onSave }: AgentModalProps) {
     const handleSave = () => {
         localStorage.setItem('gemini_api_key', apiKey);
         localStorage.setItem('gemini_model', model);
-        onSave(apiKey, model);
+        localStorage.setItem('gemini_mode', mode);
+        onSave(apiKey, model, mode);
         onClose();
     };
 
@@ -139,28 +147,72 @@ export function AgentModal({ isOpen, onClose, onSave }: AgentModalProps) {
                                         </a>
                                     </div>
 
-                                    <div className="space-y-2 mt-4">
-                                        <label className="text-sm font-semibold text-slate-300 flex items-center justify-between w-full">
-                                            <span>Inference Engine</span>
-                                            {isLoadingModels && <Loader2 size={14} className="animate-spin text-primary-400" />}
-                                        </label>
+                                    <div className="space-y-4 mt-6">
+                                        <div className="flex justify-between items-center mb-1">
+                                            <label className="text-sm font-semibold text-slate-300 flex items-center justify-between">
+                                                <span>Agent Mode & Inference Engine</span>
+                                                {isLoadingModels && <Loader2 size={14} className="animate-spin text-primary-400 ml-2" />}
+                                            </label>
+                                            <div className="flex bg-black/40 rounded-lg p-1">
+                                                <button
+                                                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${mode === 'pro' ? 'bg-primary-500 text-white' : 'text-slate-400 hover:text-white'}`}
+                                                    onClick={() => { setMode('pro'); setModel('gemini-2.5-pro'); }}
+                                                >
+                                                    PRO
+                                                </button>
+                                                <button
+                                                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${mode === 'fast' ? 'bg-primary-500 text-white' : 'text-slate-400 hover:text-white'}`}
+                                                    onClick={() => { setMode('fast'); setModel('gemini-2.5-flash'); }}
+                                                >
+                                                    FAST
+                                                </button>
+                                            </div>
+                                        </div>
                                         <select
                                             value={model}
                                             onChange={(e) => setModel(e.target.value)}
                                             className="w-full bg-black/40 border border-slate-700/50 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary-500/50 focus:ring-1 focus:ring-primary-500/50 transition-all appearance-none"
                                         >
-                                            {models.length > 0 ? (
-                                                models.map(m => (
-                                                    <option key={m.name} value={m.name}>{m.displayName}</option>
-                                                ))
+                                            {mode === 'pro' ? (
+                                                models.length > 0 ? (
+                                                    models.filter(m => m.name.includes('pro')).map(m => (
+                                                        <option key={m.name} value={m.name}>{m.displayName}</option>
+                                                    ))
+                                                ) : (
+                                                    <>
+                                                        <option value="gemini-2.5-pro">Gemini 2.5 Pro (Search Grounding)</option>
+                                                        <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                                                        <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro</option>
+                                                    </>
+                                                )
                                             ) : (
-                                                <>
-                                                    <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
-                                                    <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-                                                    <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-                                                </>
+                                                models.length > 0 ? (
+                                                    models.filter(m => !m.name.includes('pro') && m.name.includes('flash')).map(m => (
+                                                        <option key={m.name} value={m.name}>{m.displayName}</option>
+                                                    ))
+                                                ) : (
+                                                    <>
+                                                        <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                                                        <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                                                        <option value="gemini-3.1-flash-lite-preview">Gemini 3.1 Flash Lite</option>
+                                                    </>
+                                                )
                                             )}
                                         </select>
+                                    </div>
+
+                                    {/* Rate Limit Display */}
+                                    <div className="bg-black/20 p-4 rounded-xl border border-white/5 mt-4">
+                                        <div className="flex justify-between text-xs mb-1">
+                                            <span className="text-slate-400 uppercase font-semibold">Daily Quota</span>
+                                            <span className="text-white font-medium">{quotaRemaining} / {quotaLimit}</span>
+                                        </div>
+                                        <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden mt-2">
+                                            <div
+                                                className={`h-full transition-all duration-500 ${quotaRemaining / quotaLimit > 0.5 ? 'bg-primary-500' : quotaRemaining / quotaLimit > 0.2 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                                                style={{ width: `${Math.max(0, Math.min(100, (quotaRemaining / quotaLimit) * 100))}%` }}
+                                            />
+                                        </div>
                                     </div>
                                 </div>
                             </div>

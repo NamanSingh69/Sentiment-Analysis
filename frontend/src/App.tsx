@@ -20,13 +20,68 @@ function App() {
   const [errorMessage, setErrorMessage] = useState('');
   const [result, setResult] = useState<AnalysisResult | null>(null);
 
+  const [mode, setMode] = useState<'pro' | 'fast'>('pro');
+  const [model, setModel] = useState('gemini-2.5-pro');
+  const [quota, setQuota] = useState({ remaining: 25, limit: 25 });
+
+  const DAILY_LIMITS: Record<string, Record<string, number>> = {
+    "pro": { "3.1": 50, "2.5": 25 },
+    "flash": { "3.1": 500, "2.5": 250 },
+    "flash-lite": { "3.1": 1000, "2.5": 500 }
+  };
+
+  const updateQuota = (currentMode: 'pro' | 'fast') => {
+    const stored = localStorage.getItem("sentiment_rate_limits");
+    const today = new Date().toISOString().slice(0, 10);
+    let limits = { date: today, used: {} as Record<string, number> };
+    if (stored) {
+      const p = JSON.parse(stored);
+      if (p.date === today) limits = p;
+    } else {
+      localStorage.setItem("sentiment_rate_limits", JSON.stringify(limits));
+    }
+    const tier = currentMode === "pro" ? "pro" : "flash";
+    const limit = DAILY_LIMITS[tier]?.["2.5"] || 25;
+    const used = limits.used[tier] || 0;
+    setQuota({ remaining: Math.max(0, limit - used), limit });
+  };
+
+  const trackUsage = (modelName: string) => {
+    const tier = modelName.includes("pro") ? "pro" : modelName.includes("flash-lite") ? "flash-lite" : "flash";
+    const stored = localStorage.getItem("sentiment_rate_limits");
+    const today = new Date().toISOString().slice(0, 10);
+    let limits = { date: today, used: {} as Record<string, number> };
+    if (stored) {
+      const p = JSON.parse(stored);
+      if (p.date === today) limits = p;
+    }
+    limits.used[tier] = (limits.used[tier] || 0) + 1;
+    localStorage.setItem("sentiment_rate_limits", JSON.stringify(limits));
+    updateQuota(mode);
+  };
+
   useEffect(() => {
     // Initial UI load animation
     setTimeout(() => setIsLoaded(true), 100);
-    // Check local storage for API key
+    // Check local storage for configs
     const savedKey = localStorage.getItem('gemini_api_key');
+    const savedModel = localStorage.getItem('gemini_model');
+    const savedMode = localStorage.getItem('gemini_mode') as 'pro' | 'fast';
     if (savedKey) setApiKey(savedKey);
+    if (savedModel) setModel(savedModel);
+    if (savedMode) setMode(savedMode);
+    updateQuota(savedMode || 'pro');
   }, []);
+
+  const handleSaveConfig = (key: string, selectedModel: string, selectedMode: 'pro' | 'fast') => {
+    localStorage.setItem('gemini_api_key', key);
+    localStorage.setItem('gemini_model', selectedModel);
+    localStorage.setItem('gemini_mode', selectedMode);
+    setApiKey(key);
+    setModel(selectedModel);
+    setMode(selectedMode);
+    updateQuota(selectedMode);
+  };
 
   const handleAnalyze = async () => {
     if (!textToAnalyze.trim()) return;
@@ -44,16 +99,20 @@ function App() {
         },
         body: JSON.stringify({
           text: textToAnalyze,
-          model: localStorage.getItem('gemini_model') || 'gemini-1.5-flash'
+          model: model
         })
       });
 
       const data = await response.json();
 
       if (!response.ok) {
+        if (response.status === 429) {
+          throw new Error("⏳ Rate limit reached — try again in ~1 minute, or switch to Fast mode.");
+        }
         throw new Error(data.error || 'Failed to analyze text');
       }
 
+      trackUsage(data._model_used || model);
       setResult(data.result);
       setStatus('success');
     } catch (err: any) {
@@ -88,13 +147,29 @@ function App() {
           </span>
         </div>
 
-        <button
-          onClick={() => setIsAgentModalOpen(true)}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-colors text-sm font-medium"
-        >
-          <Settings size={16} className="text-primary-400" />
-          <span className="hidden sm:inline text-slate-300">Agent Config</span>
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => {
+              const newMode = mode === 'pro' ? 'fast' : 'pro';
+              const newModel = newMode === 'pro' ? 'gemini-2.5-pro' : 'gemini-2.5-flash';
+              handleSaveConfig(apiKey, newModel, newMode);
+            }}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${mode === 'pro'
+                ? 'bg-gradient-to-br from-indigo-600 to-primary-600 shadow-lg shadow-primary-500/20 text-white border border-primary-500/30'
+                : 'bg-gradient-to-br from-slate-700 to-slate-800 shadow-lg text-slate-300 border border-slate-600'
+              }`}
+          >
+            {mode === 'pro' ? '⚡ PRO' : '🚀 FAST'}
+          </button>
+          <button
+            onClick={() => setIsAgentModalOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 transition-colors text-sm font-medium relative"
+          >
+            <Settings size={16} className="text-primary-400" />
+            <span className="hidden sm:inline text-slate-300">Agent Config</span>
+            <div className={`absolute -top-1 -right-1 w-3 h-3 rounded-full border-2 border-[#020617] ${quota.remaining / quota.limit > 0.5 ? 'bg-primary-500' : 'bg-rose-500'}`}></div>
+          </button>
+        </div>
       </nav>
 
       {/* Main Workspace */}
@@ -222,7 +297,11 @@ function App() {
       <AgentModal
         isOpen={isAgentModalOpen}
         onClose={() => setIsAgentModalOpen(false)}
-        onSave={(key) => setApiKey(key)}
+        onSave={handleSaveConfig}
+        initialMode={mode}
+        initialModel={model}
+        quotaRemaining={quota.remaining}
+        quotaLimit={quota.limit}
       />
     </div>
   );
