@@ -5,7 +5,6 @@ import logging
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pydantic import BaseModel, ValidationError, Field
-import google.generativeai as genai
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +54,7 @@ def get_dynamic_cascade(api_key: str) -> list:
         return _CASCADE_CACHE
 
     try:
+        import google.generativeai as genai
         genai.configure(api_key=api_key)
         models = [m.name.replace("models/", "") for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         
@@ -82,6 +82,7 @@ def generate_with_fallback(api_key: str, initial_model: str, contents, system_in
     Executes a Gemini generation request, automatically falling back across model tiers
     on 429 quota/rate limits or 503 service issues.
     """
+    import google.generativeai as genai
     cascade = get_dynamic_cascade(api_key)
     
     # Ensure requested model is our starting point
