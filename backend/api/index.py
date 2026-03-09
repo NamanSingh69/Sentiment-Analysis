@@ -1,6 +1,11 @@
 import os
+import sys
 import requests
 import logging
+
+# Ensure Vercel can find the resolver in the same directory
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pydantic import BaseModel, ValidationError, Field
