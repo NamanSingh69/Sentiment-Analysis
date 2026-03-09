@@ -1,17 +1,16 @@
 import os
-import sys
 import requests
 import logging
-
-# Ensure Vercel can find the resolver in the same directory
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pydantic import BaseModel, ValidationError, Field
 import google.generativeai as genai
 
-from gemini_model_resolver import generate_with_fallback, get_dynamic_cascade
+try:
+    from .gemini_model_resolver import generate_with_fallback, get_dynamic_cascade
+except ImportError:
+    from gemini_model_resolver import generate_with_fallback, get_dynamic_cascade
 
 app = Flask(__name__)
 # Enable CORS for the frontend origin
